@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -125,6 +128,17 @@ func processWorkspace(workspaceRoot string) (*result, error) {
 
 	buildFiles := make(map[string]*parsedBuildFile)
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	currentUser, err := user.Current()
+	if err != nil {
+		return nil, err
+	}
+	workspaceHash := md5.Sum([]byte(workspaceRoot))
+	bazelBin := filepath.Join(homeDir, ".cache", "bazel", "_bazel_"+currentUser.Username, hex.EncodeToString(workspaceHash[:]), "execroot", "buildbuddy", "bazel-out", "k8-fastbuild", "bin")
+
 	for _, protoFile := range protoFiles {
 		// For now only support build files named "BUILD".
 		buildFilePath := filepath.Join(filepath.Dir(protoFile), "BUILD")
@@ -160,8 +174,7 @@ func processWorkspace(workspaceRoot string) (*result, error) {
 		linkSrc := filepath.Join(linkSrcDir, linkSrcFile)
 
 		protoFileRelPath := strings.TrimPrefix(protoFile, workspaceRoot)
-		genProtoAbsPath := filepath.Join(workspaceRoot, "bazel-bin", filepath.Dir(protoFileRelPath), goRule.name+"_", goRule.importPath, linkSrcFile)
-
+		genProtoAbsPath := filepath.Join(bazelBin, filepath.Dir(protoFileRelPath), goRule.name+"_", goRule.importPath, linkSrcFile)
 		s, err := os.Lstat(linkSrc)
 		if err == nil {
 			if s.Mode()&os.ModeSymlink == 0 {
@@ -171,18 +184,20 @@ func processWorkspace(workspaceRoot string) (*result, error) {
 			if err != nil {
 				return nil, fmt.Errorf("could not read symlink %q: %v", linkSrc, err)
 			}
-			// cautious for now but we should probably just overwrite the symlink
 			if existingTarget != genProtoAbsPath {
-				return nil, fmt.Errorf("symlink %s already exists and points to a different location", linkSrc)
+				if err := os.Remove(linkSrc); err != nil {
+					return nil, err
+				}
+			} else {
+				result.upToDate++
+				continue
 			}
-			result.upToDate++
-		} else {
-			if err := os.Symlink(genProtoAbsPath, linkSrc); err != nil {
-				return nil, fmt.Errorf("could not create symlink from %q to %q: %v", genProtoAbsPath, linkSrc, err)
-			}
-			fmt.Printf("Created symlink for %s\n", protoFile)
-			result.created++
 		}
+		if err := os.Symlink(genProtoAbsPath, linkSrc); err != nil {
+			return nil, fmt.Errorf("could not create symlink from %q to %q: %v", genProtoAbsPath, linkSrc, err)
+		}
+		fmt.Printf("Created symlink for %s\n", protoFile)
+		result.created++
 	}
 	return result, nil
 }
