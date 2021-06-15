@@ -1,4 +1,4 @@
-module github.com/vadimberezniker/sgp
+module github.com/tempoz/sgp
 
 go 1.15
 
