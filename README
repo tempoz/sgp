@@ -1,2 +1,0 @@
-Tool to create symlinks for Bazel generated Go proto files to make code completion work.
-
