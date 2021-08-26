@@ -129,7 +129,8 @@ func parseBuildFile(buildFilePath string) (*parsedBuildFile, error) {
 			return nil, fmt.Errorf("%s: go proto rule %q missing proto attribute", buildFilePath, r.Name())
 		}
 		if !strings.HasPrefix(protoRule, ":") {
-			return nil, fmt.Errorf("%s: go proto rule %q has unsupported proto reference: %s", buildFilePath, r.Name(), protoRule)
+			fmt.Printf("%s: go proto rule %q has unsupported proto reference: %s\n", buildFilePath, r.Name(), protoRule)
+			continue
 		}
 
 		importPath := ""
@@ -164,7 +165,8 @@ type result struct {
 func processProtoFile(workspaceRoot string, protoFile string, buildFile *parsedBuildFile, result *result) error {
 	langRules, ok := buildFile.getLangProtoRulesForProto(protoFile)
 	if !ok {
-		return fmt.Errorf("could not figure out go proto rule for %q", protoFile)
+		fmt.Printf("could not figure out go proto rule for %q\n", protoFile)
+		return nil
 	}
 
 	for _, langRule := range langRules {
