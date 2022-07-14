@@ -1,17 +1,15 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/user"
-	"path"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/bazelbuild/buildtools/build"
 )
@@ -25,24 +23,47 @@ var (
 	dirs = flag.String("dirs", "", "Bazel workspaces to process")
 
 	githubRepoRe = regexp.MustCompile(`^github.com/(.+?)/(.+?)/`)
+
+	binDir struct {
+		Once  sync.Once
+		Value string
+		Err   error
+	}
 )
+
+func getBazelBinDir(workspaceRoot string) (string, error) {
+	compute := func() (string, error) {
+		cmd := exec.Command("bazel", "info", "--show_make_env")
+		cmd.Dir = workspaceRoot
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", err
+		}
+		lines := strings.Split(string(b), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) != 2 || fields[0] != "bazel-bin:" {
+				continue
+			}
+			return fields[1], nil
+		}
+		return "", fmt.Errorf("missing 'bazel-bin' entry in `bazel info --show_make_env`")
+	}
+	binDir.Once.Do(func() {
+		binDir.Value, binDir.Err = compute()
+	})
+	return binDir.Value, binDir.Err
+}
 
 type languageProtoRule struct {
 	kind, name, protoRuleName, importPath string
 }
 
 func (r *languageProtoRule) getLinkAndTarget(workspaceRoot, protoFile string) (string, string, error) {
-	homeDir, err := os.UserHomeDir()
+	bazelBin, err := getBazelBinDir(workspaceRoot)
 	if err != nil {
 		return "", "", err
 	}
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", "", err
-	}
-	workspaceHash := md5.Sum([]byte(path.Clean(workspaceRoot)))
-	bazelBin := filepath.Join(homeDir, ".cache", "bazel", "_bazel_"+currentUser.Username, hex.EncodeToString(workspaceHash[:]), "execroot", "buildbuddy", "bazel-out", "k8-fastbuild", "bin")
-
 	protoFileRelPath := strings.TrimPrefix(protoFile, workspaceRoot)
 
 	switch r.kind {
@@ -65,7 +86,7 @@ func (r *languageProtoRule) getLinkAndTarget(workspaceRoot, protoFile string) (s
 
 		return linkSrc, genProtoAbsPath, nil
 	case tsProtoLibrary:
-		linkSrc := filepath.Join(workspaceRoot, filepath.Dir(protoFileRelPath), r.name + ".d.ts")
+		linkSrc := filepath.Join(workspaceRoot, filepath.Dir(protoFileRelPath), r.name+".d.ts")
 		genProtoAbsPath := filepath.Join(bazelBin, filepath.Dir(protoFileRelPath), r.name+".d.ts")
 		return linkSrc, genProtoAbsPath, nil
 	}
