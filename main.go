@@ -65,7 +65,7 @@ func (r *languageProtoRule) getLinkAndTarget(workspaceRoot, protoFile string) (s
 
 		return linkSrc, genProtoAbsPath, nil
 	case tsProtoLibrary:
-		linkSrc := filepath.Join(workspaceRoot, filepath.Dir(protoFileRelPath), r.name + ".d.ts")
+		linkSrc := filepath.Join(workspaceRoot, filepath.Dir(protoFileRelPath), r.name+".d.ts")
 		genProtoAbsPath := filepath.Join(bazelBin, filepath.Dir(protoFileRelPath), r.name+".d.ts")
 		return linkSrc, genProtoAbsPath, nil
 	}
@@ -243,7 +243,7 @@ func processWorkspace(workspaceRoot string) (*result, error) {
 		}
 
 		if err := processProtoFile(workspaceRoot, protoFile, buildFile, result); err != nil {
-			return nil, err
+			fmt.Printf("Skipping %q: %s\n", protoFile, err)
 		}
 
 	}
